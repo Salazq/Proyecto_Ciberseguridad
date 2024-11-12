@@ -91,27 +91,34 @@ public class SignApplication extends Application {
         File archivo = fileChooser.showOpenDialog(null);
         if (archivo != null) {
 
-            TextInputDialog dialog = new TextInputDialog();
-            dialog.setTitle("Generar Claves");
-            dialog.setHeaderText("Ingrese una contraseña para proteger la clave privada:");
-            dialog.showAndWait().ifPresent(passphrase -> {
-                try {
-                    PrivateKey privateKey = leerClavePrivada("keys/privateKey.key", passphrase);
+            fileChooser.setTitle("Seleccione el archivo que contiene la clave privada");
+            File archivoFirma = fileChooser.showOpenDialog(null);
 
-                    Signature signature = Signature.getInstance("SHA256withRSA");
-                    signature.initSign(privateKey);
 
-                    byte[] data = Files.readAllBytes(archivo.toPath());
-                    signature.update(data);
+            if (archivoFirma != null) {
 
-                    byte[] firma = signature.sign();
-                    Files.write(new File("keys/archivo.firma").toPath(), firma);
+                TextInputDialog dialog = new TextInputDialog();
+                dialog.setTitle("Generar Claves");
+                dialog.setHeaderText("Ingrese una contraseña para proteger la clave privada:");
+                dialog.showAndWait().ifPresent(passphrase -> {
+                    try {
+                        PrivateKey privateKey = leerClavePrivada(archivoFirma, passphrase);
 
-                    showAlert("Éxito", "Archivo firmado correctamente.");
-                } catch (Exception e) {
-                    showAlert("Error", "Contraseña incorrecta");
-                }
-            });
+                        Signature signature = Signature.getInstance("SHA256withRSA");
+                        signature.initSign(privateKey);
+
+                        byte[] data = Files.readAllBytes(archivo.toPath());
+                        signature.update(data);
+
+                        byte[] firma = signature.sign();
+                        Files.write(new File("keys/archivo.firma").toPath(), firma);
+
+                        showAlert("Éxito", "Archivo firmado correctamente.");
+                    } catch (Exception e) {
+                        showAlert("Error", "Contraseña incorrecta");
+                    }
+                });
+            }
         }
     }
 
@@ -123,27 +130,43 @@ public class SignApplication extends Application {
 
         if (archivoOriginal != null) {
 
-            try {
-                PublicKey publicKey = leerClavePublica("keys/publicKey.key");
+            fileChooser.setTitle("Seleccione el archivo que contiene la clave pública");
+            File archivoClave = fileChooser.showOpenDialog(null);
 
-                Signature signature = Signature.getInstance("SHA256withRSA");
-                signature.initVerify(publicKey);
+            if (archivoClave != null) {
 
-                byte[] data = Files.readAllBytes(archivoOriginal.toPath());
-                signature.update(data);
+                fileChooser.setTitle("Seleccione el archivo que contiene la firma");
+                File archivoFirma = fileChooser.showOpenDialog(null);
 
-                 byte[] firma = Files.readAllBytes(new File("keys/archivo.firma").toPath());
-                boolean esValida = signature.verify(firma);
+                if (archivoFirma != null) {
 
-                showAlert("Resultado", "¿La firma es válida? " + esValida);
-            } catch (Exception e) {
-                showAlert("Error", "Error al verificar firma: " + e.getMessage());
+                try {
+                    PublicKey publicKey = leerClavePublica(archivoClave);
+
+                    Signature signature = Signature.getInstance("SHA256withRSA");
+                    signature.initVerify(publicKey);
+
+                    byte[] data = Files.readAllBytes(archivoOriginal.toPath());
+                    signature.update(data);
+
+                    byte[] firma = Files.readAllBytes(archivoFirma.toPath());
+                    boolean isValid = signature.verify(firma);
+
+                    if (isValid){
+                        showAlert("Resultado", "La firma es válida");
+                    } else {
+                        showAlert("Resultado", "La firma no es válida");
+                    }
+                } catch (Exception e) {
+                    showAlert("Error", "Error al verificar firma: " + e.getMessage());
+                }
+                }
             }
         }
     }
 
-    private PrivateKey leerClavePrivada(String archivoClavePrivada, String passphrase) throws Exception {
-        byte[] keyBytes = Files.readAllBytes(new File(archivoClavePrivada).toPath());
+    private PrivateKey leerClavePrivada(File archivoClavePrivada, String passphrase) throws Exception {
+        byte[] keyBytes = Files.readAllBytes(archivoClavePrivada.toPath());
 
         PBEKeySpec pbeKeySpec = new PBEKeySpec(passphrase.toCharArray(), new byte[8], 1000, 256);
         SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
@@ -159,8 +182,8 @@ public class SignApplication extends Application {
         return kf.generatePrivate(spec);
     }
 
-    private PublicKey leerClavePublica(String archivoClavePublica) throws Exception {
-        byte[] keyBytes = Files.readAllBytes(new File(archivoClavePublica).toPath());
+    private PublicKey leerClavePublica(File archivoClavePublica) throws Exception {
+        byte[] keyBytes = Files.readAllBytes(archivoClavePublica.toPath());
         X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         return keyFactory.generatePublic(spec);
