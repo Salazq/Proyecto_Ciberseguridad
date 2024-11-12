@@ -1,6 +1,7 @@
 package org.example.proyecto_ciber;
 
 import javafx.application.Application;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 import javafx.geometry.Insets;
@@ -9,17 +10,24 @@ import javafx.scene.control.Button;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
+
+import javax.crypto.Cipher;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.File;
 import java.nio.file.Files;
 import java.security.*;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 
-public class HelloApplication extends Application {
+
+public class SignApplication extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        primaryStage.setTitle("Firmador y Verificador de Firmas Digitales");
+        primaryStage.setTitle("Firmador y Verificador de Firmas");
 
         Button btnGenerarClaves = new Button("Generar par de claves RSA");
         Button btnFirmarArchivo = new Button("Firmar archivo");
@@ -29,11 +37,17 @@ public class HelloApplication extends Application {
         btnFirmarArchivo.setOnAction(e -> firmarArchivo());
         btnVerificarFirma.setOnAction(e -> verificarFirma());
 
+        VBox buttonBox = new VBox(10);
+        buttonBox.setPadding(new Insets(20));
+        buttonBox.setAlignment(Pos.CENTER);
+        buttonBox.getChildren().addAll(btnGenerarClaves, btnFirmarArchivo, btnVerificarFirma);
+
         VBox layout = new VBox(10);
         layout.setPadding(new Insets(20));
-        layout.getChildren().addAll(btnGenerarClaves, btnFirmarArchivo, btnVerificarFirma);
+        layout.getChildren().add(buttonBox);
 
         Scene scene = new Scene(layout, 400, 200);
+        scene.getStylesheets().add(getClass().getResource("/styles.css").toExternalForm());
         primaryStage.setScene(scene);
         primaryStage.show();
     }
@@ -48,11 +62,23 @@ public class HelloApplication extends Application {
                 keyGen.initialize(2048);
                 KeyPair pair = keyGen.generateKeyPair();
 
-                Files.write(new File("publicKey.key").toPath(), pair.getPublic().getEncoded());
+                Files.write(new File("keys/publicKey.key").toPath(), pair.getPublic().getEncoded());
 
-                Files.write(new File("privateKey.key").toPath(), pair.getPrivate().getEncoded());
+                // Cifrar la clave privada
+                PBEKeySpec pbeKeySpec = new PBEKeySpec(passphrase.toCharArray(), new byte[8], 1000, 256);
+                SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+                SecretKeySpec secretKey = new SecretKeySpec(keyFactory.generateSecret(pbeKeySpec).getEncoded(), "AES");
+
+                Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+                cipher.init(Cipher.ENCRYPT_MODE, secretKey, new IvParameterSpec(new byte[16]));
+
+                byte[] encryptedPrivateKey = cipher.doFinal(pair.getPrivate().getEncoded());
+
+                // Guardar la clave privada cifrada
+                Files.write(new File("keys/privateKey.key").toPath(), encryptedPrivateKey);
 
                 showAlert("Éxito", "Claves generadas y guardadas correctamente.");
+
             } catch (Exception e) {
                 showAlert("Error", "Error al generar claves: " + e.getMessage());
             }
@@ -62,26 +88,30 @@ public class HelloApplication extends Application {
     private void firmarArchivo() {
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Seleccione el archivo a firmar");
-
         File archivo = fileChooser.showOpenDialog(null);
         if (archivo != null) {
-            String archivoClavePrivada = "privateKey.key";
-            try {
-                PrivateKey privateKey = leerClavePrivada(archivoClavePrivada);
 
-                Signature signature = Signature.getInstance("SHA256withRSA");
-                signature.initSign(privateKey);
+            TextInputDialog dialog = new TextInputDialog();
+            dialog.setTitle("Generar Claves");
+            dialog.setHeaderText("Ingrese una contraseña para proteger la clave privada:");
+            dialog.showAndWait().ifPresent(passphrase -> {
+                try {
+                    PrivateKey privateKey = leerClavePrivada("keys/privateKey.key", passphrase);
 
-                byte[] data = Files.readAllBytes(archivo.toPath());
-                signature.update(data);
+                    Signature signature = Signature.getInstance("SHA256withRSA");
+                    signature.initSign(privateKey);
 
-                byte[] firma = signature.sign();
-                Files.write(new File("archivo.firma").toPath(), firma);
+                    byte[] data = Files.readAllBytes(archivo.toPath());
+                    signature.update(data);
 
-                showAlert("Éxito", "Archivo firmado correctamente.");
-            } catch (Exception e) {
-                showAlert("Error", "Error al firmar archivo: " + e.getMessage());
-            }
+                    byte[] firma = signature.sign();
+                    Files.write(new File("keys/archivo.firma").toPath(), firma);
+
+                    showAlert("Éxito", "Archivo firmado correctamente.");
+                } catch (Exception e) {
+                    showAlert("Error", "Contraseña incorrecta");
+                }
+            });
         }
     }
 
@@ -90,11 +120,11 @@ public class HelloApplication extends Application {
         fileChooser.setTitle("Seleccione el archivo original");
 
         File archivoOriginal = fileChooser.showOpenDialog(null);
+
         if (archivoOriginal != null) {
-            String archivoClavePublica = "publicKey.key";
-            String archivoFirma = "archivo.firma";
+
             try {
-                PublicKey publicKey = leerClavePublica(archivoClavePublica);
+                PublicKey publicKey = leerClavePublica("keys/publicKey.key");
 
                 Signature signature = Signature.getInstance("SHA256withRSA");
                 signature.initVerify(publicKey);
@@ -102,7 +132,7 @@ public class HelloApplication extends Application {
                 byte[] data = Files.readAllBytes(archivoOriginal.toPath());
                 signature.update(data);
 
-                 byte[] firma = Files.readAllBytes(new File(archivoFirma).toPath());
+                 byte[] firma = Files.readAllBytes(new File("keys/archivo.firma").toPath());
                 boolean esValida = signature.verify(firma);
 
                 showAlert("Resultado", "¿La firma es válida? " + esValida);
@@ -112,11 +142,21 @@ public class HelloApplication extends Application {
         }
     }
 
-    private PrivateKey leerClavePrivada(String archivoClavePrivada) throws Exception {
+    private PrivateKey leerClavePrivada(String archivoClavePrivada, String passphrase) throws Exception {
         byte[] keyBytes = Files.readAllBytes(new File(archivoClavePrivada).toPath());
-        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        return keyFactory.generatePrivate(spec);
+
+        PBEKeySpec pbeKeySpec = new PBEKeySpec(passphrase.toCharArray(), new byte[8], 1000, 256);
+        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+        SecretKeySpec secretKey = new SecretKeySpec(keyFactory.generateSecret(pbeKeySpec).getEncoded(), "AES");
+
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, new IvParameterSpec(new byte[16]));
+
+        byte[] decryptedPrivateKey = cipher.doFinal(keyBytes);
+
+        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decryptedPrivateKey);
+        KeyFactory kf = KeyFactory.getInstance("RSA");
+        return kf.generatePrivate(spec);
     }
 
     private PublicKey leerClavePublica(String archivoClavePublica) throws Exception {
