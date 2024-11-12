@@ -52,6 +52,9 @@ public class SignApplication extends Application {
         primaryStage.show();
     }
 
+    /**
+     * Genera un par de claves RSA y las guarda en archivos.
+     */
     private void generarClaves() {
         TextInputDialog dialog = new TextInputDialog();
         dialog.setTitle("Generar Claves");
@@ -85,6 +88,9 @@ public class SignApplication extends Application {
         });
     }
 
+    /**
+     * Firma un archivo seleccionado por el usuario.
+     */
     private void firmarArchivo() {
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Seleccione el archivo a firmar");
@@ -122,6 +128,9 @@ public class SignApplication extends Application {
         }
     }
 
+    /**
+     * Verifica la firma de un archivo seleccionado por el usuario.
+     */
     private void verificarFirma() {
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Seleccione el archivo original");
@@ -165,6 +174,14 @@ public class SignApplication extends Application {
         }
     }
 
+    /**
+     * Lee una clave privada desde un archivo y la descifra usando una frase de contraseña.
+     *
+     * @param archivoClavePrivada el archivo que contiene la clave privada cifrada
+     * @param passphrase la frase de contraseña para descifrar la clave privada
+     * @return la clave privada descifrada
+     * @throws Exception si ocurre un error durante la lectura o descifrado de la clave
+     */
     private PrivateKey leerClavePrivada(File archivoClavePrivada, String passphrase) throws Exception {
         byte[] keyBytes = Files.readAllBytes(archivoClavePrivada.toPath());
 
@@ -182,6 +199,13 @@ public class SignApplication extends Application {
         return kf.generatePrivate(spec);
     }
 
+    /**
+     * Lee una clave pública desde un archivo.
+     *
+     * @param archivoClavePublica el archivo que contiene la clave pública
+     * @return la clave pública
+     * @throws Exception si ocurre un error durante la lectura de la clave
+     */
     private PublicKey leerClavePublica(File archivoClavePublica) throws Exception {
         byte[] keyBytes = Files.readAllBytes(archivoClavePublica.toPath());
         X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
@@ -189,6 +213,13 @@ public class SignApplication extends Application {
         return keyFactory.generatePublic(spec);
     }
 
+
+    /**
+     * Muestra una alerta con un título y un mensaje.
+     *
+     * @param title el título de la alerta
+     * @param message el mensaje de la alerta
+     */
     private void showAlert(String title, String message) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle(title);
