@@ -22,7 +22,6 @@ import java.security.*;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 
-
 public class SignApplication extends Application {
 
     @Override
@@ -67,25 +66,36 @@ public class SignApplication extends Application {
 
                 Files.write(new File("keys/publicKey.key").toPath(), pair.getPublic().getEncoded());
 
-                // Cifrar la clave privada
-                PBEKeySpec pbeKeySpec = new PBEKeySpec(passphrase.toCharArray(), new byte[8], 1000, 256);
-                SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-                SecretKeySpec secretKey = new SecretKeySpec(keyFactory.generateSecret(pbeKeySpec).getEncoded(), "AES");
+                byte[] encryptedPrivateKey = encriptarDesencriptarClave(passphrase.toCharArray(), pair.getPrivate().getEncoded(), Cipher.ENCRYPT_MODE);
 
-                Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-                cipher.init(Cipher.ENCRYPT_MODE, secretKey, new IvParameterSpec(new byte[16]));
-
-                byte[] encryptedPrivateKey = cipher.doFinal(pair.getPrivate().getEncoded());
-
-                // Guardar la clave privada cifrada
                 Files.write(new File("keys/privateKey.key").toPath(), encryptedPrivateKey);
 
-                showAlert("Éxito", "Claves generadas y guardadas correctamente.");
+                showAlert("Éxito", "Claves generadas correctamente.");
 
             } catch (Exception e) {
-                showAlert("Error", "Error al generar claves: " + e.getMessage());
+                showAlert("Error", "Error al generar claves");
             }
         });
+    }
+
+    /**
+     * Encrypts or decrypts a private key using a passphrase.
+     *
+     * @param passphrase the passphrase used to derive the encryption key
+     * @param privateKey the private key to be encrypted or decrypted
+     * @param mode the cipher mode (Cipher.ENCRYPT_MODE or Cipher.DECRYPT_MODE)
+     * @return the encrypted or decrypted private key
+     * @throws Exception if an error occurs during the encryption or decryption process
+     */
+    private byte[] encriptarDesencriptarClave(char[] passphrase, byte[] privateKey, int mode) throws Exception {
+        PBEKeySpec pbeKeySpec = new PBEKeySpec(passphrase, new byte[8], 1000, 256);
+        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+        SecretKeySpec secretKey = new SecretKeySpec(keyFactory.generateSecret(pbeKeySpec).getEncoded(), "AES");
+
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        cipher.init(mode, secretKey, new IvParameterSpec(new byte[16]));
+
+        return cipher.doFinal(privateKey);
     }
 
     /**
@@ -95,6 +105,7 @@ public class SignApplication extends Application {
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Seleccione el archivo a firmar");
         File archivo = fileChooser.showOpenDialog(null);
+
         if (archivo != null) {
 
             fileChooser.setTitle("Seleccione el archivo que contiene la clave privada");
@@ -104,11 +115,11 @@ public class SignApplication extends Application {
             if (archivoFirma != null) {
 
                 TextInputDialog dialog = new TextInputDialog();
-                dialog.setTitle("Generar Claves");
-                dialog.setHeaderText("Ingrese una contraseña para proteger la clave privada:");
+                dialog.setTitle("Firmar Archivo");
+                dialog.setHeaderText("Ingrese la contraseña de la clave privada:");
                 dialog.showAndWait().ifPresent(passphrase -> {
                     try {
-                        PrivateKey privateKey = leerClavePrivada(archivoFirma, passphrase);
+                        PrivateKey privateKey = leerClavePrivada(archivoFirma, passphrase.toCharArray());
 
                         Signature signature = Signature.getInstance("SHA256withRSA");
                         signature.initSign(privateKey);
@@ -167,7 +178,7 @@ public class SignApplication extends Application {
                         showAlert("Resultado", "La firma no es válida");
                     }
                 } catch (Exception e) {
-                    showAlert("Error", "Error al verificar firma: " + e.getMessage());
+                    showAlert("Error", "Error al verificar firma");
                 }
                 }
             }
@@ -182,17 +193,10 @@ public class SignApplication extends Application {
      * @return la clave privada descifrada
      * @throws Exception si ocurre un error durante la lectura o descifrado de la clave
      */
-    private PrivateKey leerClavePrivada(File archivoClavePrivada, String passphrase) throws Exception {
+    private PrivateKey leerClavePrivada(File archivoClavePrivada, char [] passphrase) throws Exception {
         byte[] keyBytes = Files.readAllBytes(archivoClavePrivada.toPath());
 
-        PBEKeySpec pbeKeySpec = new PBEKeySpec(passphrase.toCharArray(), new byte[8], 1000, 256);
-        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-        SecretKeySpec secretKey = new SecretKeySpec(keyFactory.generateSecret(pbeKeySpec).getEncoded(), "AES");
-
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        cipher.init(Cipher.DECRYPT_MODE, secretKey, new IvParameterSpec(new byte[16]));
-
-        byte[] decryptedPrivateKey = cipher.doFinal(keyBytes);
+        byte[] decryptedPrivateKey = encriptarDesencriptarClave(passphrase,keyBytes,Cipher.DECRYPT_MODE);
 
         PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decryptedPrivateKey);
         KeyFactory kf = KeyFactory.getInstance("RSA");
@@ -212,7 +216,6 @@ public class SignApplication extends Application {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         return keyFactory.generatePublic(spec);
     }
-
 
     /**
      * Muestra una alerta con un título y un mensaje.
