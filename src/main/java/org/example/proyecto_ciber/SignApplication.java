@@ -10,6 +10,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
+import javafx.stage.DirectoryChooser;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKeyFactory;
@@ -23,52 +24,92 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 
 public class SignApplication extends Application {
+    private File selectedDirectory;
 
     @Override
     public void start(Stage primaryStage) {
         primaryStage.setTitle("Firmador y Verificador de Firmas");
 
+
+        //Botones de la aplicación
+        Button btnSeleccionarDirectorio = new Button("Seleccionar Directorio");
         Button btnGenerarClaves = new Button("Generar par de claves RSA");
         Button btnFirmarArchivo = new Button("Firmar archivo");
         Button btnVerificarFirma = new Button("Verificar firma");
 
+        //lo botones están deshabilitados hasta que se seleccione un directorio
+        btnGenerarClaves.setDisable(true);
+        btnFirmarArchivo.setDisable(true);
+        btnVerificarFirma.setDisable(true);
+
+        //Evento de selección de directorio	
+        btnSeleccionarDirectorio.setOnAction(e -> seleccionarDirectorio(primaryStage, btnGenerarClaves, btnFirmarArchivo, btnVerificarFirma));
+
+        //Eventos de los botones
         btnGenerarClaves.setOnAction(e -> generarClaves());
         btnFirmarArchivo.setOnAction(e -> firmarArchivo());
         btnVerificarFirma.setOnAction(e -> verificarFirma());
 
+
+        //Configuración de la pantalla y los estilos
         VBox buttonBox = new VBox(10);
         buttonBox.setPadding(new Insets(20));
         buttonBox.setAlignment(Pos.CENTER);
-        buttonBox.getChildren().addAll(btnGenerarClaves, btnFirmarArchivo, btnVerificarFirma);
+        buttonBox.getChildren().addAll(btnSeleccionarDirectorio, btnGenerarClaves, btnFirmarArchivo, btnVerificarFirma);
 
         VBox layout = new VBox(10);
         layout.setPadding(new Insets(20));
         layout.getChildren().add(buttonBox);
 
-        Scene scene = new Scene(layout, 400, 200);
+        Scene scene = new Scene(layout, 400, 300);
         scene.getStylesheets().add(getClass().getResource("/styles.css").toExternalForm());
         primaryStage.setScene(scene);
         primaryStage.show();
+    }
+
+    private void seleccionarDirectorio(Stage primaryStage, Button... buttons) {
+        DirectoryChooser directoryChooser = new DirectoryChooser();
+        directoryChooser.setTitle("Seleccione el directorio");
+        selectedDirectory = directoryChooser.showDialog(primaryStage);
+
+        //Habilitar los botones si se selecciona un directorio
+        if (selectedDirectory != null) {
+            for (Button button : buttons) {
+                button.setDisable(false);
+            }
+        }
     }
 
     /**
      * Genera un par de claves RSA y las guarda en archivos.
      */
     private void generarClaves() {
+
+        if (selectedDirectory == null) {
+            showAlert("Error", "Debe seleccionar un directorio primero.");
+            return;
+        }
+
         TextInputDialog dialog = new TextInputDialog();
         dialog.setTitle("Generar Claves");
         dialog.setHeaderText("Ingrese una contraseña para proteger la clave privada:");
+
+        //Si se digitó una contraseña
         dialog.showAndWait().ifPresent(passphrase -> {
+
             try {
                 KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
                 keyGen.initialize(2048);
                 KeyPair pair = keyGen.generateKeyPair();
 
-                Files.write(new File("keys/publicKey.key").toPath(), pair.getPublic().getEncoded());
+                //Se guardan las clave pública
+                Files.write(new File(selectedDirectory, "publicKey.key").toPath(), pair.getPublic().getEncoded());
 
+                //Se encripta la clave privada
                 byte[] encryptedPrivateKey = encriptarDesencriptarClave(passphrase.toCharArray(), pair.getPrivate().getEncoded(), Cipher.ENCRYPT_MODE);
 
-                Files.write(new File("keys/privateKey.key").toPath(), encryptedPrivateKey);
+                //Se guarda la clave privada encriptada
+                Files.write(new File(selectedDirectory, "privateKey.key").toPath(), encryptedPrivateKey);
 
                 showAlert("Éxito", "Claves generadas correctamente.");
 
@@ -79,15 +120,16 @@ public class SignApplication extends Application {
     }
 
     /**
-     * Encrypts or decrypts a private key using a passphrase.
+     * Encripta o desencripta una clave privada usando una frase de contraseña.
      *
-     * @param passphrase the passphrase used to derive the encryption key
-     * @param privateKey the private key to be encrypted or decrypted
-     * @param mode the cipher mode (Cipher.ENCRYPT_MODE or Cipher.DECRYPT_MODE)
-     * @return the encrypted or decrypted private key
-     * @throws Exception if an error occurs during the encryption or decryption process
+     * @param passphrase la  contraseña utilizada para encriptar la clave
+     * @param privateKey la clave privada a ser encriptada o desencriptada
+     * @param mode el modo del cifrado (Cipher.ENCRYPT_MODE o Cipher.DECRYPT_MODE)
+     * @return la clave privada encriptada o desencriptada
+     * @throws Exception si ocurre un error durante el proceso de encriptación o desencriptación
      */
     private byte[] encriptarDesencriptarClave(char[] passphrase, byte[] privateKey, int mode) throws Exception {
+
         PBEKeySpec pbeKeySpec = new PBEKeySpec(passphrase, new byte[8], 1000, 256);
         SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
         SecretKeySpec secretKey = new SecretKeySpec(keyFactory.generateSecret(pbeKeySpec).getEncoded(), "AES");
@@ -102,40 +144,52 @@ public class SignApplication extends Application {
      * Firma un archivo seleccionado por el usuario.
      */
     private void firmarArchivo() {
+        if (selectedDirectory == null) {
+            showAlert("Error", "Debe seleccionar un directorio primero.");
+            return;
+        }
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Seleccione el archivo a firmar");
         File archivo = fileChooser.showOpenDialog(null);
 
+        //si se seleccionó un archivo para firmar
         if (archivo != null) {
 
-            fileChooser.setTitle("Seleccione el archivo que contiene la clave privada");
-            File archivoFirma = fileChooser.showOpenDialog(null);
 
+            TextInputDialog dialog = new TextInputDialog();
+            dialog.setTitle("Firmar Archivo");
+            dialog.setHeaderText("Ingrese la contraseña de la clave privada:");
 
-            if (archivoFirma != null) {
+            //Si se digitó una contraseña
+            dialog.showAndWait().ifPresent(passphrase -> {
+                try {
 
-                TextInputDialog dialog = new TextInputDialog();
-                dialog.setTitle("Firmar Archivo");
-                dialog.setHeaderText("Ingrese la contraseña de la clave privada:");
-                dialog.showAndWait().ifPresent(passphrase -> {
-                    try {
-                        PrivateKey privateKey = leerClavePrivada(archivoFirma, passphrase.toCharArray());
+                    //se lee la clave privada
+                    PrivateKey privateKey = leerClavePrivada(new File(selectedDirectory.getAbsolutePath(), "privateKey.key"), passphrase.toCharArray());
 
-                        Signature signature = Signature.getInstance("SHA256withRSA");
-                        signature.initSign(privateKey);
+                    Signature signature = Signature.getInstance("SHA256withRSA");
 
-                        byte[] data = Files.readAllBytes(archivo.toPath());
-                        signature.update(data);
+                    //se asigna la clave privada al objeto signature
+                    signature.initSign(privateKey);
 
-                        byte[] firma = signature.sign();
-                        Files.write(new File("keys/archivo.firma").toPath(), firma);
+                    //se lee el archivo a firmar
+                    byte[] data = Files.readAllBytes(archivo.toPath());
 
-                        showAlert("Éxito", "Archivo firmado correctamente.");
-                    } catch (Exception e) {
-                        showAlert("Error", "Contraseña incorrecta");
-                    }
-                });
-            }
+                    //se actualiza el objeto signature con los datos del archivo
+                    signature.update(data);
+
+                    //se firma el archivo
+                    byte[] firma = signature.sign();
+
+                    //se guarda la firma en un archivo
+                    Files.write(new File(selectedDirectory, "archivo.firma").toPath(), firma);
+
+                    showAlert("Éxito", "Archivo firmado correctamente.");
+                } catch (Exception e) {
+                    showAlert("Error", "Contraseña incorrecta");
+                }
+            });
+            
         }
     }
 
@@ -143,33 +197,42 @@ public class SignApplication extends Application {
      * Verifica la firma de un archivo seleccionado por el usuario.
      */
     private void verificarFirma() {
+        if (selectedDirectory == null) {
+            showAlert("Error", "Debe seleccionar un directorio primero.");
+            return;
+        }
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Seleccione el archivo original");
 
         File archivoOriginal = fileChooser.showOpenDialog(null);
 
+        // si se seleccionó un archivo original
         if (archivoOriginal != null) {
 
-            fileChooser.setTitle("Seleccione el archivo que contiene la clave pública");
-            File archivoClave = fileChooser.showOpenDialog(null);
 
-            if (archivoClave != null) {
+            fileChooser.setTitle("Seleccione el archivo que contiene la firma");
+            File archivoFirma = fileChooser.showOpenDialog(null);
 
-                fileChooser.setTitle("Seleccione el archivo que contiene la firma");
-                File archivoFirma = fileChooser.showOpenDialog(null);
-
-                if (archivoFirma != null) {
+            // si se seleccionó un archivo de firma
+            if (archivoFirma != null) {
 
                 try {
-                    PublicKey publicKey = leerClavePublica(archivoClave);
+                    //se lee la clave pública
+                    PublicKey publicKey = leerClavePublica(new File(selectedDirectory.getAbsolutePath(), "publicKey.key"));
 
                     Signature signature = Signature.getInstance("SHA256withRSA");
+
+                    //se asigna la clave pública al objeto signature
                     signature.initVerify(publicKey);
 
+                    // se lee el archivo original
                     byte[] data = Files.readAllBytes(archivoOriginal.toPath());
                     signature.update(data);
 
+                    //se lee la firma
                     byte[] firma = Files.readAllBytes(archivoFirma.toPath());
+
+                    //se verifica la firma
                     boolean isValid = signature.verify(firma);
 
                     if (isValid){
@@ -180,8 +243,7 @@ public class SignApplication extends Application {
                 } catch (Exception e) {
                     showAlert("Error", "Error al verificar firma");
                 }
-                }
-            }
+            } 
         }
     }
 
@@ -198,6 +260,7 @@ public class SignApplication extends Application {
 
         byte[] decryptedPrivateKey = encriptarDesencriptarClave(passphrase,keyBytes,Cipher.DECRYPT_MODE);
 
+        //tipo de codificación de la clave privada
         PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decryptedPrivateKey);
         KeyFactory kf = KeyFactory.getInstance("RSA");
         return kf.generatePrivate(spec);
@@ -212,6 +275,8 @@ public class SignApplication extends Application {
      */
     private PublicKey leerClavePublica(File archivoClavePublica) throws Exception {
         byte[] keyBytes = Files.readAllBytes(archivoClavePublica.toPath());
+
+        //tipo de codificación de la clave pública
         X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         return keyFactory.generatePublic(spec);
