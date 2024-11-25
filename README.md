@@ -9,6 +9,9 @@
 
 El programa fue desarrollado en Java utilizando la librería JavaFX para la interfaz gráfica y bibliotecas estándar de Java para el manejo de claves y firmas digitales. Se construyó una interfaz simple con botones que permiten al usuario realizar las funcionalidades principales: seleccionar un directorio, generar un par de claves RSA, firmar un archivo y verificar una firma. Los botones de la interfaz se habilitan dinámicamente después de que el usuario selecciona un directorio (en donde se guardan las claves y firmas generadas), asegurando una interacción intuitiva y clara. Además, se implementaron alertas para notificar al usuario sobre errores o resultados exitosos en cada operación.
 
+![image](https://github.com/user-attachments/assets/4897fc74-3b1f-4789-84b3-4679ddb90024)
+
+
 La funcionalidad de generación de claves utiliza el algoritmo RSA con una longitud de 2048 bits. La clave pública se guarda directamente en un archivo, mientras que la clave privada es cifrada utilizando AES, con una contraseña proporcionada por el usuario. Para firmar un archivo, el programa permite seleccionar el archivo y lo firma con la clave privada si la contraseña introducida por el usuario es correcta. La firma generada se almacena en un archivo separado. Por otro lado, la funcionalidad de verificación permite al usuario cargar tanto el archivo original como su firma, utilizando la clave pública para validar la autenticidad de la firma. Se priorizó la seguridad al emplear algoritmos como PBKDF2 para la derivación de claves y AES para el cifrado.
 
 Las dos librerias utilizadas para este proceso fueron "security" y "crypto". La primera incluye las clases KeyPairGenerator (permite genera el par de clave) y Signature (permite firmar y verificar firmas con las claves); la segunda incluye la clases SecretKeyFactory y SecretKeySpec (que permiten generar una llave para cifrar la clave privada) y Cipher (que permite cifrar y descifrar la clave privada)
